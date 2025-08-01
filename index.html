@@ -5,36 +5,101 @@
   <title>Carte OpenLayers</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol/ol.css" />
   <style>
-    html, body, #map {
+    html, body {
       margin: 0;
       padding: 0;
       width: 100%;
       height: 100%;
+      overflow: hidden; /* Prevent scrolling */
+      background-color: black; /* Set background color to black */
+      color: white; /* Set default text color to white */
     }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    h1 {
+      margin: 10px;
+      font-size: 1.5em;
+      color: white; /* Ensure heading is white */
+    }
+
+    #info-box {
+      display: flex;
+      justify-content: space-around;
+      margin: 10px;
+    }
+
+    #info-box div {
+      color: #ccc; /* Grayish text color for info box */
+    }
+
+    .popup {
+      display: flex;
+      flex-direction: column;
+      align-items: center; /* Center the popup rows horizontally */
+      margin: 10px;
+    }
+
+    .popup-row {
+      display: flex;
+      width: 50%; /* Set the width to 50% of the parent */
+      margin-bottom: 5px;
+    }
+
+    .popup-input {
+      flex: 1;
+      padding: 8px;
+      background-color: #333; /* Dark background for input */
+      color: white; /* White text for input */
+      border: 1px solid #555; /* Border color for input */
+    }
+
+    .popup-button {
+      padding: 8px 15px;
+      margin-left: 5px;
+      background-color: #555; /* Dark background for button */
+      color: white; /* White text for button */
+      border: none;
+      cursor: pointer;
+    }
+
+    #map-container {
+      flex: 1;
+      min-height: 0; /* Allow the map container to shrink */
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background-color: #111; /* Dark background for map area */
+    }
+
     /* ... (tes styles popup & info-box restent les mêmes, inclus plus bas) */
   </style>
 </head>
 
 <body>
-  <h1>>MAPp</h1>
-  <div id="map"></div>
-
+  <h1>Street-level Thermal Exposure Index</h1>
   <div id="info-box">
     <div id="info-box_courte">Longueur du trajet le plus court : 0 m</div>
     <div id="info-box_viable">Longueur du trajet le plus viable : 0 m</div>
   </div>
-
   <div class="popup">
     <div class="popup-row">
-      <input type="text" class="popup-input" placeholder="Départ">
+      <input type="text" id="departure" list="trc-list" placeholder="Tronçon de départ" class="popup-input">
       <button class="popup-button">Valider</button>
     </div>
-
     <div class="popup-row">
-      <input type="text" class="popup-input" placeholder="Arrivée">
+      <input type="text" id="arrival" list="trc-list" placeholder="Tronçon d'arrivée" class="popup-input">
       <button class="popup-button">Tracer</button>
     </div>
   </div>
+  <datalist id="trc-list"></datalist>
+  <div id="map-container">
+    <div id="map"></div>
 
   <!-- ✅ Script OpenLayers depuis CDN -->
   <script src="https://cdn.jsdelivr.net/npm/ol/dist/ol.js"></script>
@@ -153,7 +218,7 @@
         console.log('Arrivée sélectionnée :', trcIdArrivee);
 
         if (trcIdDepart && trcIdArrivee) {
-
+            console.log('Calcul du chemin entre', trcIdDepart, 'et', trcIdArrivee);
             //chemin rapide
             cheminTrcIds = dijkstra(route, trcIdDepart.toString(), trcIdArrivee.toString());
 
@@ -188,6 +253,7 @@
           alert("Le départ n'est pas encore défini.");
         }
       }
+
 
       pickingMode = null;
     });
@@ -237,6 +303,109 @@
     if (path[0] !== parseInt(start)) return null;
     return path;
   }
+
+
+  // ~~~~~~ Sélection par adresse ~~~~~~ //
+
+  window.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('departure').value = '';
+    document.getElementById('arrival').value = '';
+
+    const datalist = document.getElementById('trc-list');
+    const departureInput = document.getElementById('departure');
+    const arrivalInput = document.getElementById('arrival');
+    let trcIdDepart_addressBar = '';
+    let trcIdArrivee_addressBar = '';
+    const validTrcIds = new Set();
+
+    if (!geojsonData || !Array.isArray(geojsonData.features)) {
+      console.error('geojsonData.features is missing or invalid');
+      return;
+    }
+
+    geojsonData.features.forEach(item => {
+      const trc_id = item?.properties?.trc_id;
+      const trc_rue = item?.properties?.trc_rue;
+
+      if (trc_id) {
+        validTrcIds.add(String(trc_id));
+
+        const option = document.createElement('option');
+        option.value = trc_rue ? `${trc_id} - ${trc_rue}` : trc_id;
+        datalist.appendChild(option);
+      }
+    });
+
+    function extractTrcId(value) {
+      return value.split(' - ')[0].trim();
+    }
+
+
+    function checkInputsAndGetPath() {
+      if (trcIdDepart_addressBar && trcIdArrivee_addressBar) {
+        console.log('Calcul du chemin entre', trcIdDepart_addressBar, 'et', trcIdArrivee_addressBar);
+        //chemin rapide
+        cheminTrcIds = dijkstra(route, trcIdDepart_addressBar.toString(), trcIdArrivee_addressBar.toString());
+
+        if (cheminTrcIds) {
+            cheminTrcIds = cheminTrcIds;
+        const features = vectorLayer.getSource().getFeatures();
+        const totalLongueurCourte = features
+          .filter((feat) => cheminTrcIds.includes(feat.get('trc_id')))
+          .reduce((sum, feat) => {
+              const val = feat.get('distance_courte');
+              return sum + (typeof val === 'number' ? val : 0);
+          }, 0);
+        document.getElementById("info-box_courte").innerText = "Longueur du trajet le plus court : " + totalLongueurCourte.toFixed(2) + " m";
+        vectorLayer.changed();
+                  }
+
+            
+              cheminTrcIdsRapide = dijkstra(route_rapide, trcIdDepart_addressBar.toString(), trcIdArrivee_addressBar.toString());
+                if (cheminTrcIdsRapide){
+                    cheminTrcIdsRapide = cheminTrcIdsRapide;
+        const features = vectorLayer.getSource().getFeatures();
+        const totalLongueurViable = features
+          .filter((feat) => cheminTrcIdsRapide.includes(feat.get('trc_id')))
+          .reduce((sum, feat) => {
+              const val = feat.get('distance_courte');
+              return sum + (typeof val === 'number' ? val : 0);
+          }, 0);
+                    document.getElementById("info-box_viable").innerText = "Longueur du trajet le plus viable : " + totalLongueurViable.toFixed(2) + " m";
+                    vectorLayer.changed();
+                  };
+              }
+      else {
+        console.log('Un ou les deux TRC IDs sont manquants.');
+      }
+    }
+
+    //inputElem: texte dans l'input | setIdCallback: ce qui va être mis dans trcIdDepart_addressBar ou l'autre
+    function validateInput(inputElem, setIdCallback) { 
+      const rawValue = inputElem.value.trim();
+      const trcId = String(extractTrcId(rawValue));
+      //Si l'user écrit directement l'id ça peut trigger la fonction si l'id existe, à voir si ça veut être bloqué ou nn
+      if (validTrcIds.has(trcId)) { 
+        console.log("Valid TRC ID trouvé :", trcId);
+        setIdCallback(trcId);
+        checkInputsAndGetPath();
+      } else {
+        console.log("Valid TRC ID non trouvé :", trcId);
+        setIdCallback('');
+      }
+    }
+
+    departureInput.addEventListener('change', () => {
+      validateInput(departureInput, val => trcIdDepart_addressBar = val);
+    });
+
+    arrivalInput.addEventListener('change', () => {
+      validateInput(arrivalInput, val => trcIdArrivee_addressBar = val);
+    });
+  });
+
+
+
 
 
     
